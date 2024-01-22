@@ -3,15 +3,15 @@
 
 - 🌱 I’m currently learning **Javascript**
 
-- 👯 I’m looking to collaborate on **Any E-commerce that needs my services**
+- 🫱🏻‍🫲🏼 I’m looking to collaborate on **Any E-commerce that needs my services**
 
-- 🤝 I’m looking for help with **new tools & trends**
+- 🥇 I’m looking for help with **new tools & trends**
 
 - 💬 Ask me about **E-commerce**
 
 - 📫 How to reach me **diegofalconn@gmail.com**
 
-- ⚡ Fun fact **I play Padel**
+- 🎾 Fun fact **I play Padel**
 
 <h3 align="left">Connect with me:</h3>
 <p align="left">
