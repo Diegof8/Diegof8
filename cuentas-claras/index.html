@@ -204,7 +204,31 @@ details[open] summary{margin-bottom:8px}
 .check{display:flex;gap:8px;align-items:center;font-size:.92rem}
 .check input{width:18px;height:18px;accent-color:var(--accent)}
 
-.fab{position:fixed;right:max(16px,calc((100vw - 1120px)/2 + 16px));bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:25;box-shadow:0 6px 20px rgba(0,0,0,.18);padding:12px 20px;font-size:1rem}
+.fabs{position:fixed;right:max(16px,calc((100vw - 1120px)/2 + 16px));bottom:calc(24px + env(safe-area-inset-bottom,0px));z-index:25;display:flex;gap:10px;align-items:center}
+.fabs .btn{box-shadow:0 6px 20px rgba(0,0,0,.18);padding:12px 20px;font-size:1rem}
+.fabs .mic svg,.mic-big svg{width:20px;height:20px}
+
+/* Dictado */
+.voice{display:grid;gap:14px}
+.voice-top{display:flex;gap:14px;align-items:center}
+.mic-big{flex:none;width:64px;height:64px;border-radius:50%;border:0;cursor:pointer;background:var(--accent);color:var(--accent-fg);display:grid;place-items:center;box-shadow:0 4px 14px rgba(0,0,0,.15)}
+.mic-big svg{width:28px;height:28px}
+.mic-big[aria-pressed="true"]{background:var(--expense);color:var(--surface)}
+.voice-status{margin:0;color:var(--muted);font-size:.92rem}
+.voice-status b{color:var(--fg);font-weight:600}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--bg);border-radius:999px;padding:4px 10px;font-size:.82rem;cursor:pointer;color:var(--muted)}
+.chip:hover{color:var(--fg);border-color:var(--accent)}
+.drafts{display:grid;gap:10px}
+.draft{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(0,1.3fr) auto;gap:8px;align-items:center;padding:10px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--bg)}
+.draft .sign{font-family:var(--font-mono);font-weight:600;width:1.2em;text-align:center}
+.draft .sign.inc{color:var(--income)} .draft .sign.exp{color:var(--expense)}
+.draft .row2{grid-column:2/-1;display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:8px}
+.draft .warn{grid-column:2/-1;font-size:.8rem;color:var(--warn)}
+.draft.bad{border-color:var(--warn)}
+.draft .x{width:28px;height:28px;font-size:1rem}
+@media (max-width:480px){.draft{grid-template-columns:auto minmax(0,1fr) auto}.draft .catsel{grid-column:2/-1;grid-row:2}.draft .row2{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+@media (prefers-reduced-motion:no-preference){.mic-big[aria-pressed="true"]{animation:pulse 1.4s ease-in-out infinite}@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--expense) 45%,transparent)}50%{box-shadow:0 0 0 12px transparent}}}
 
 /* Hoja modal */
 .sheet-bg{position:fixed;inset:0;z-index:50;background:rgba(10,16,13,.45);display:flex;align-items:center;justify-content:center;padding:16px}
@@ -228,7 +252,8 @@ details[open] summary{margin-bottom:8px}
   .tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--surface);border-top:1px solid var(--line);justify-content:space-around;padding:4px 4px calc(4px + env(safe-area-inset-bottom,0px));max-width:none;gap:0}
   .tab{flex-direction:column;gap:2px;font-size:.68rem;padding:6px 4px;border-bottom:0;border-top:2px solid transparent;flex:1;min-width:0}
   .tab[aria-selected="true"]{border-top-color:var(--accent);border-bottom-color:transparent;color:var(--accent)}
-  .fab{bottom:calc(76px + env(safe-area-inset-bottom,0px));padding:12px 18px}
+  .fabs{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+  .fabs .btn{padding:12px 16px}
   .toast{bottom:calc(140px + env(safe-area-inset-bottom,0px))}
   .month-label{min-width:8em}
   .top-in{padding-block:10px}
@@ -266,13 +291,223 @@ details[open] summary{margin-bottom:8px}
 
 <main class="wrap" id="main" aria-live="polite"></main>
 
-<button class="btn primary fab" id="fab" type="button" data-act="new-tx">+ Movimiento</button>
+<div class="fabs" id="fabs">
+  <button class="btn mic" type="button" data-act="voice" aria-label="Dictar un gasto o ingreso"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>Dictar</button>
+  <button class="btn primary" id="fab" type="button" data-act="new-tx">+ Movimiento</button>
+</div>
 
 <div class="sheet-bg" id="sheet" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" id="sheetBody"></div>
 </div>
 <div class="toast" id="toast" role="status" hidden></div>
 
+<script>
+/* ---------- Dictado: convierte una frase en movimientos ---------- */
+const VoiceParser = (function () {
+  'use strict';
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const stem = w => { if (w.length <= 3) return w; w = w.replace(/s$/, ''); return w.length > 3 ? w.replace(/[aeio]$/, '') : w; };
+
+  const UNITS = { cero: 0, un: 1, uno: 1, una: 1, dos: 2, tres: 3, cuatro: 4, cinco: 5, seis: 6, siete: 7, ocho: 8, nueve: 9, diez: 10, once: 11, doce: 12, trece: 13, catorce: 14, quince: 15, dieciseis: 16, diecisiete: 17, dieciocho: 18, diecinueve: 19, veinte: 20, veintiun: 21, veintiuno: 21, veintiuna: 21, veintidos: 22, veintitres: 23, veinticuatro: 24, veinticinco: 25, veintiseis: 26, veintisiete: 27, veintiocho: 28, veintinueve: 29 };
+  const TENS = { treinta: 30, cuarenta: 40, cincuenta: 50, sesenta: 60, setenta: 70, ochenta: 80, noventa: 90 };
+  const HUNDREDS = { cien: 100, ciento: 100, doscientos: 200, doscientas: 200, trescientos: 300, trescientas: 300, cuatrocientos: 400, cuatrocientas: 400, quinientos: 500, quinientas: 500, seiscientos: 600, seiscientas: 600, setecientos: 700, setecientas: 700, ochocientos: 800, ochocientas: 800, novecientos: 900, novecientas: 900 };
+  const CURRENCY = new Set(['€', '$', 'euro', 'euros', 'eur', 'peso', 'pesos', 'dolar', 'dolares', 'usd', 'sol', 'soles', 'libra', 'libras', 'pavo', 'pavos', 'lucas', 'mxn']);
+  const CENTS = new Set(['centimo', 'centimos', 'centavo', 'centavos', 'cts', 'cent']);
+  const SEPARATORS = new Set([',', ';', 'y', 'e', 'mas', 'ademas', 'tambien', 'luego', 'despues', 'otro', 'otra']);
+  const INCOME = new Set(['ingreso', 'ingresos', 'ingrese', 'ingresaron', 'cobre', 'cobrado', 'cobro', 'cobramos', 'recibi', 'recibido', 'gane', 'ganado', 'pagaron', 'devolvieron', 'devolucion', 'reembolso', 'vendi', 'venta', 'entrada']);
+  const EXPENSE = new Set(['gasto', 'gaste', 'gastado', 'gastamos', 'pague', 'pagado', 'pagamos', 'compre', 'comprado', 'compramos', 'salida']);
+  const FILLER = new Set(['anota', 'anotar', 'apunta', 'apuntar', 'anade', 'agrega', 'registra', 'registrar', 'pon', 'nuevo', 'nueva']);
+  const STOP = new Set(['en', 'de', 'del', 'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'por', 'para', 'al', 'a', 'con', 'me', 'he', 'hemos', 'mi', 'mis', 'se', 'que', 'lo', 'le', 'han', 'ha', 'y', 'e', 'total', 'son']);
+  const WEEKDAYS = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+
+  // Palabras habituales → categoría por defecto (por nombre normalizado)
+  const SYN = {
+    'vivienda': 'alquiler renta hipoteca casa piso comunidad ibi',
+    'supermercado': 'super supermercado mercadona lidl carrefour aldi eroski alcampo consum compra mercado alimentacion fruta fruteria carniceria panaderia pan walmart soriana chedraui costco oxxo despensa jumbo exito',
+    'suministros': 'luz agua gas electricidad internet fibra movil telefono wifi',
+    'transporte': 'gasolina combustible diesel gasoil taxi uber cabify bolt didi metro bus autobus tren renfe parking aparcamiento peaje abono transporte coche itv taller',
+    'restaurantes y ocio': 'restaurante cena comida almuerzo desayuno brunch bar cerveza cana copa cafe cine padel concierto teatro ocio fiesta pizza hamburguesa sushi glovo ubereats rappi viaje hotel tapas palomitas helado vermut',
+    'salud y deporte': 'farmacia medico dentista hospital medicina gimnasio gym fisio fisioterapeuta psicologo optica deporte',
+    'suscripciones': 'netflix spotify hbo disney prime icloud youtube suscripcion chatgpt claude',
+    'ropa': 'ropa zapato zapatilla camiseta pantalon vestido chaqueta zara primark abrigo',
+    'otros gastos': 'regalo varios',
+    'nomina': 'nomina sueldo salario paga',
+    'freelance': 'freelance proyecto cliente factura honorario',
+    'rendimientos': 'interes intereses dividendo rendimiento cupon',
+    'otros ingresos': 'bizum reembolso devolucion wallapop venta'
+  };
+
+  function parseDigits(s) {
+    if (s.includes('.') && s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+    else if (s.includes(',')) s = s.replace(',', '.');
+    else if (/\.\d{3}$/.test(s)) s = s.replace(/\./g, '');
+    const n = parseFloat(s); return isFinite(n) ? n : NaN;
+  }
+
+  function tokenize(text) {
+    const out = [];
+    const re = /\d[\d.,]*\d|\d|[$€]|[,;]|[^\s\d,;.:!?¿¡$€"()]+/g; let m;
+    while ((m = re.exec(text))) {
+      const t = { orig: m[0], norm: norm(m[0]) };
+      if (/^\d/.test(t.orig)) t.num = parseDigits(t.orig);
+      out.push(t);
+    }
+    return out;
+  }
+
+  // "ciento cincuenta y dos" → 152
+  function mergeNumberWords(tk) {
+    const out = [];
+    const isOne = w => w === 'un' || w === 'uno' || w === 'una';
+    const isNumWord = i => {
+      const w = tk[i].norm, nx = tk[i + 1];
+      if (isOne(w)) return !!nx && (nx.norm === 'mil' || CURRENCY.has(nx.norm));
+      return w in UNITS || w in TENS || w in HUNDREDS || w === 'mil';
+    };
+    for (let i = 0; i < tk.length; i++) {
+      const prev = out[out.length - 1];
+      if (tk[i].norm === 'mil' && prev && prev.num !== undefined) { prev.num *= 1000; prev.orig += ' ' + tk[i].orig; continue; }
+      if (!isNumWord(i)) { out.push(tk[i]); continue; }
+      let total = 0, cur = 0, j = i, lastTens = false, afterY = false;
+      const origs = [];
+      while (j < tk.length) {
+        const w = tk[j].norm;
+        if (w === 'mil') { total += (cur || 1) * 1000; cur = 0; lastTens = false; }
+        else if (w in HUNDREDS) { cur += HUNDREDS[w]; lastTens = false; }
+        else if (w in TENS) { cur += TENS[w]; lastTens = true; }
+        else if (w in UNITS && (!isOne(w) || afterY || isNumWord(j))) { cur += UNITS[w]; lastTens = false; }
+        else if (w === 'y' && lastTens && tk[j + 1] && tk[j + 1].norm in UNITS) { origs.push(tk[j].orig); j++; afterY = true; lastTens = false; continue; }
+        else break;
+        afterY = false; origs.push(tk[j].orig); j++;
+      }
+      out.push({ orig: origs.join(' '), norm: String(total + cur), num: total + cur });
+      i = j - 1;
+    }
+    return out;
+  }
+
+  // "12 con 50", "12 euros y 50 céntimos" → 12.50
+  function mergeCents(tk) {
+    const out = [];
+    for (let i = 0; i < tk.length; i++) {
+      const t = tk[i];
+      if (t.num !== undefined && Number.isInteger(t.num)) {
+        let j = i + 1, cur = null;
+        if (tk[j] && CURRENCY.has(tk[j].norm)) { cur = tk[j]; j++; }
+        const link = tk[j], c = tk[j + 1], after = tk[j + 2];
+        const ok = link && c && c.num !== undefined && Number.isInteger(c.num) && c.num < 100 &&
+          (link.norm === 'con' || (link.norm === 'y' && (cur || (after && CENTS.has(after.norm)))));
+        if (ok) {
+          const merged = { orig: t.orig, norm: '', num: t.num + c.num / 100, cur: !!cur };
+          out.push(merged); if (cur) out.push(cur);
+          i = j + 1; if (after && CENTS.has(after.norm)) i++;
+          continue;
+        }
+      }
+      out.push(t);
+    }
+    return out;
+  }
+
+  function splitSegments(tk) {
+    const segs = []; let cur = [];
+    tk.forEach(t => { if (SEPARATORS.has(t.norm)) { segs.push(cur); cur = []; } else cur.push(t); });
+    segs.push(cur);
+    const hasNum = s => s.some(t => t.num !== undefined);
+    const out = []; let carry = [];
+    segs.forEach(s => {
+      if (!s.length) return;
+      const merged = carry.concat(s);
+      if (hasNum(s)) { out.push(merged); carry = []; } else carry = merged;
+    });
+    if (carry.length) { if (out.length) out[out.length - 1] = out[out.length - 1].concat(carry); else out.push(carry); }
+    return out;
+  }
+
+  function addDays(d, n) { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); return x; }
+  const iso = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+
+  function parseSegment(tk, cats, today) {
+    const used = new Set();
+    // Importe
+    let amountIdx = -1;
+    tk.forEach((t, i) => {
+      if (t.num === undefined) return;
+      const nearCur = t.cur || (tk[i + 1] && CURRENCY.has(tk[i + 1].norm)) || (tk[i - 1] && (tk[i - 1].norm === '$' || tk[i - 1].norm === '€'));
+      if (amountIdx < 0) { amountIdx = i; return; }
+      const best = tk[amountIdx], bestCur = best.cur || (tk[amountIdx + 1] && CURRENCY.has(tk[amountIdx + 1].norm));
+      if ((nearCur && !bestCur) || (!!nearCur === !!bestCur && t.num > best.num)) amountIdx = i;
+    });
+    const amount = amountIdx >= 0 ? Math.round(tk[amountIdx].num * 100) / 100 : NaN;
+    tk.forEach((t, i) => { if (t.num !== undefined || CURRENCY.has(t.norm) || CENTS.has(t.norm)) used.add(i); });
+
+    // Fecha
+    let date = today;
+    tk.forEach((t, i) => {
+      const w = t.norm;
+      if (w === 'hoy') { used.add(i); }
+      else if (w === 'ayer') {
+        if (tk[i - 1] && tk[i - 1].norm === 'de' && tk[i - 2] && tk[i - 2].norm === 'antes') { date = addDays(today, -2); used.add(i - 1).add(i - 2); }
+        else date = addDays(today, -1);
+        used.add(i);
+      } else if (w === 'anteayer' || w === 'antier') { date = addDays(today, -2); used.add(i); }
+      else if (WEEKDAYS.includes(w)) {
+        const diff = (today.getDay() - WEEKDAYS.indexOf(w) + 7) % 7;
+        date = addDays(today, -diff); used.add(i);
+        if (tk[i + 1] && tk[i + 1].norm === 'pasado') used.add(i + 1);
+      }
+    });
+
+    // Tipo
+    let kind = null;
+    tk.forEach((t, i) => {
+      if (INCOME.has(t.norm)) { kind = 'ingreso'; used.add(i); }
+      else if (EXPENSE.has(t.norm)) { if (!kind) kind = 'gasto'; used.add(i); }
+      else if (FILLER.has(t.norm)) used.add(i);
+    });
+
+    // Categoría
+    const words = tk.map((t, i) => used.has(i) ? null : stem(t.norm));
+    let best = null;
+    cats.forEach(c => {
+      if (kind && c.kind !== kind) return;
+      const nameWords = norm(c.name).split(/\s+/).filter(w => w && !STOP.has(w)).map(stem);
+      const syn = (SYN[norm(c.name)] || '').split(' ').filter(Boolean).map(stem);
+      words.forEach((w, i) => {
+        if (!w) return;
+        let score = 0, byName = false;
+        if (nameWords.includes(w)) { score = 3; byName = true; } else if (syn.includes(w)) score = 2;
+        if (score && (!best || score > best.score)) best = { c, score, idx: i, byName };
+      });
+    });
+    let guessed = false, cat;
+    if (best) { cat = best.c; if (best.byName) used.add(best.idx); }
+    else {
+      const k = kind || 'gasto';
+      const pool = cats.filter(c => c.kind === k);
+      cat = pool.find(c => /^otros?\b/.test(norm(c.name))) || pool[pool.length - 1] || null;
+      guessed = true;
+    }
+
+    // Nota: lo que queda, sin palabras vacías en los extremos
+    let rest = tk.filter((t, i) => !used.has(i) && t.norm !== ',' && t.norm !== ';');
+    while (rest.length && STOP.has(rest[0].norm)) rest.shift();
+    while (rest.length && STOP.has(rest[rest.length - 1].norm)) rest.pop();
+    let note = rest.map(t => t.orig).join(' ').trim();
+    if (note) note = note.charAt(0).toUpperCase() + note.slice(1);
+
+    return { amount, catId: cat ? cat.id : '', kind: cat ? cat.kind : (kind || 'gasto'), note, date: iso(date), guessed };
+  }
+
+  function parse(text, cats, today) {
+    today = today || new Date();
+    const tk = mergeCents(mergeNumberWords(tokenize(String(text || ''))));
+    if (!tk.length) return [];
+    return splitSegments(tk).map(s => parseSegment(s, cats, today));
+  }
+  return { parse, norm };
+})();
+</script>
 <script>
 (function () {
 'use strict';
@@ -658,7 +893,7 @@ function render() {
   const views = { resumen: viewResumen, movimientos: viewMovimientos, inversiones: viewInversiones, categorias: viewCategorias, ajustes: viewAjustes };
   $('#main').innerHTML = views[ui.tab]();
   if (ui.tab === 'movimientos') renderTxList();
-  $('#fab').hidden = ui.tab === 'ajustes';
+  $('#fabs').hidden = ui.tab === 'ajustes';
 }
 function commit(msg) { save(); render(); if (msg) toast(msg); }
 
@@ -673,7 +908,7 @@ function openSheet(html) {
   const f = $('#sheetBody [autofocus]') || $('#sheetBody input, #sheetBody select, #sheetBody textarea');
   if (f) setTimeout(() => f.focus(), 30);
 }
-function closeSheet() { $('#sheet').hidden = true; $('#sheetBody').innerHTML = ''; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
+function closeSheet() { stopRec(true); $('#sheet').hidden = true; $('#sheetBody').innerHTML = ''; if (lastFocus && lastFocus.focus) lastFocus.focus(); }
 const sheetHead = t => `<div class="sheet-h"><h2 id="sheetTitle">${t}</h2><button class="x" type="button" data-act="close" aria-label="Cerrar">×</button></div>`;
 
 function catOptions(kind, sel) { return state.categories.filter(c => c.kind === kind).map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join(''); }
@@ -728,8 +963,106 @@ function snapSheet(invId) {
   </form>`);
 }
 
+/* ---------- Dictado por voz ---------- */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const SPEECH_LANG = { EUR: 'es-ES', MXN: 'es-MX', COP: 'es-CO', ARS: 'es-AR', CLP: 'es-CL', PEN: 'es-PE', USD: 'es-US', GBP: 'es-ES' };
+const VOICE_EXAMPLES = ['supermercado 150', 'gasolina 40 ayer', 'cobré 300 de freelance', 'cena 35 con 50 y netflix 13,99'];
+let rec = null, recOn = false, drafts = [];
+
+function speechLang() { const n = navigator.language || ''; return /^es\b/i.test(n) ? n : (SPEECH_LANG[state.currency] || 'es-ES'); }
+function voiceSheet() {
+  drafts = [];
+  openSheet(sheetHead('Dictar movimiento') + `<div class="voice">
+    <div class="voice-top">
+      ${SR ? `<button class="mic-big" type="button" id="micBtn" data-act="mic" aria-pressed="false" aria-label="Empezar a escuchar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>` : ''}
+      <p class="voice-status" id="voiceStatus">${SR ? 'Toca el micrófono y di, por ejemplo, <b>«supermercado 150»</b>. Puedes decir varios seguidos.' : 'Escribe la frase o usa el micrófono del teclado de tu móvil. Por ejemplo, <b>«supermercado 150»</b>.'}</p>
+    </div>
+    <label class="field"><span>Lo que has dicho</span><input class="input" id="voiceText" autocomplete="off" placeholder="supermercado 150, gasolina 40 ayer" ${SR ? '' : 'autofocus'}></label>
+    <div class="chips" aria-label="Ejemplos">${VOICE_EXAMPLES.map(x => `<button type="button" class="chip" data-act="voice-example" data-text="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+    <div class="drafts" id="drafts"></div>
+    <div class="sheet-f"><span class="muted" style="font-size:.82rem;align-self:center">Revisa y guarda. Puedes cambiar cualquier dato.</span><button class="btn primary" type="button" id="voiceSave" data-act="voice-save" disabled>Guardar</button></div>
+  </div>`);
+}
+function setVoiceStatus(html) { const el = $('#voiceStatus'); if (el) el.innerHTML = html; }
+function setMic(on) { recOn = on; const b = $('#micBtn'); if (b) { b.setAttribute('aria-pressed', String(on)); b.setAttribute('aria-label', on ? 'Dejar de escuchar' : 'Empezar a escuchar'); } }
+function startRec() {
+  if (!SR) return;
+  stopRec(true);
+  let finalText = '';
+  try {
+    rec = new SR(); rec.lang = speechLang(); rec.interimResults = true; rec.continuous = false; rec.maxAlternatives = 1;
+  } catch (e) { setVoiceStatus('No se pudo activar el dictado. Escribe la frase en el recuadro.'); return; }
+  rec.onresult = e => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; if (r.isFinal) finalText += ' ' + r[0].transcript; else interim += r[0].transcript; }
+    const box = $('#voiceText'); if (box) { box.value = (finalText + ' ' + interim).trim(); updateDrafts(); }
+  };
+  rec.onerror = e => {
+    const msg = {
+      'not-allowed': 'No hay permiso para usar el micrófono. Actívalo en el navegador, o escribe la frase (el micrófono del teclado también sirve).',
+      'service-not-allowed': 'Este navegador no permite dictar aquí. Escribe la frase o usa el micrófono del teclado.',
+      'no-speech': 'No te he oído. Toca el micrófono y vuelve a intentarlo.',
+      'audio-capture': 'No se encuentra ningún micrófono. Escribe la frase en el recuadro.',
+      'network': 'El dictado necesita conexión a internet. Escribe la frase en el recuadro.'
+    }[e.error];
+    if (msg) setVoiceStatus(msg);
+  };
+  rec.onend = () => {
+    setMic(false);
+    if (drafts.length) setVoiceStatus(`Entendido. Revisa ${drafts.length > 1 ? 'los movimientos' : 'el movimiento'} y pulsa <b>Guardar</b>.`);
+  };
+  try { rec.start(); setMic(true); setVoiceStatus('<b>Te escucho…</b> Di la categoría y el importe.'); }
+  catch (e) { setVoiceStatus('No se pudo activar el dictado. Escribe la frase en el recuadro.'); }
+}
+function stopRec(abort) { if (rec) { try { abort ? rec.abort() : rec.stop(); } catch (e) { } if (abort) rec = null; } setMic(false); }
+
+function updateDrafts() {
+  const box = $('#voiceText'); if (!box) return;
+  drafts = VoiceParser.parse(box.value, state.categories, new Date());
+  renderDrafts();
+}
+function draftCatOptions(sel) {
+  const g = k => state.categories.filter(c => c.kind === k).map(c => `<option value="${c.id}" ${c.id === sel ? 'selected' : ''}>${esc(c.name)}</option>`).join('');
+  return `<optgroup label="Gastos">${g('gasto')}</optgroup><optgroup label="Ingresos">${g('ingreso')}</optgroup>`;
+}
+function renderDrafts() {
+  const el = $('#drafts'); if (!el) return;
+  el.innerHTML = drafts.map((d, i) => {
+    const okAmt = isFinite(d.amount) && d.amount > 0, inc = d.kind === 'ingreso';
+    const warn = !okAmt ? 'Falta el importe.' : d.guessed ? 'No he reconocido la categoría: elígela.' : '';
+    return `<div class="draft${warn ? ' bad' : ''}" data-i="${i}">
+      <span class="sign ${inc ? 'inc' : 'exp'}" aria-label="${inc ? 'Ingreso' : 'Gasto'}">${inc ? '+' : '−'}</span>
+      <input class="input small mono" data-d="amount" inputmode="decimal" value="${okAmt ? esc(amountStr(d.amount)) : ''}" placeholder="Importe" aria-label="Importe">
+      <select class="input small catsel" data-d="catId" aria-label="Categoría">${draftCatOptions(d.catId)}</select>
+      <button type="button" class="x" data-act="draft-del" data-i="${i}" aria-label="Quitar">×</button>
+      <div class="row2"><input class="input small" data-d="note" value="${esc(d.note)}" placeholder="Nota" maxlength="80" aria-label="Nota"><input class="input small" type="date" data-d="date" value="${esc(d.date)}" aria-label="Fecha"></div>
+      ${warn ? `<div class="warn">${warn}</div>` : ''}
+    </div>`;
+  }).join('');
+  refreshVoiceSave();
+}
+const validDrafts = () => drafts.filter(d => isFinite(d.amount) && d.amount > 0 && d.catId && /^\d{4}-\d{2}-\d{2}$/.test(d.date));
+function refreshVoiceSave() {
+  const b = $('#voiceSave'); if (!b) return; const n = validDrafts().length;
+  b.disabled = !n; b.textContent = n > 1 ? `Guardar ${n} movimientos` : 'Guardar';
+}
+function saveDrafts() {
+  const ok = validDrafts(); if (!ok.length) return;
+  ok.forEach(d => { const c = catById(d.catId); state.tx.push({ id: uid(), date: d.date, kind: c.kind, amount: round2(d.amount), catId: d.catId, note: d.note, recurring: false }); });
+  const one = ok[0], c = catById(one.catId);
+  closeSheet(); ui.month = ok[ok.length - 1].date.slice(0, 7);
+  commit(ok.length > 1 ? `${ok.length} movimientos guardados` : `${c.kind === 'gasto' ? 'Gasto' : 'Ingreso'} guardado: ${c.name} ${money(one.amount)}`);
+}
+
 /* ---------- Exportar / importar ---------- */
-function download(name, text, type) {
+async function download(name, text, type) {
+  let dl = null;
+  try { dl = window.claude && window.claude.use ? await window.claude.use('downloads') : null; } catch (e) { dl = null; }
+  if (dl) {
+    try { await dl.save({ filename: name, data: text }); toast('Archivo guardado'); }
+    catch (e) { toast(e && e.code === 'declined' ? 'Descarga cancelada' : 'No se pudo descargar. Usa «Copiar».'); }
+    return;
+  }
   try {
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name;
     document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -772,6 +1105,11 @@ document.addEventListener('click', e => {
   switch (el.dataset.act) {
     case 'close': closeSheet(); break;
     case 'new-tx': txSheet(); break;
+    case 'voice': voiceSheet(); if (SR) startRec(); break;
+    case 'mic': if (recOn) stopRec(false); else startRec(); break;
+    case 'voice-example': { stopRec(true); const b = $('#voiceText'); b.value = el.dataset.text; updateDrafts(); setVoiceStatus('Así se interpreta el ejemplo. Prueba a decir el tuyo.'); break; }
+    case 'draft-del': drafts.splice(+el.dataset.i, 1); renderDrafts(); break;
+    case 'voice-save': saveDrafts(); break;
     case 'edit-tx': txSheet(state.tx.find(t => t.id === id)); break;
     case 'del-tx': state.tx = state.tx.filter(t => t.id !== id); closeSheet(); commit('Movimiento borrado'); break;
     case 'copy-fixed': {
@@ -808,10 +1146,22 @@ document.addEventListener('click', e => {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !$('#sheet').hidden) closeSheet();
+  if (e.key === 'Enter' && e.target.id === 'voiceText') { e.preventDefault(); saveDrafts(); }
   if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('.bar-g')) { e.preventDefault(); ui.month = e.target.dataset.month; render(); }
 });
 
-document.addEventListener('input', e => { if (e.target.id === 'q') { ui.q = e.target.value; renderTxList(); } });
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (t.id === 'q') { ui.q = t.value; renderTxList(); }
+  if (t.id === 'voiceText') { if (recOn) { stopRec(true); setVoiceStatus('Dictado en pausa. Toca el micrófono para seguir hablando.'); } updateDrafts(); }
+  if (t.dataset && t.dataset.d) {
+    const d = drafts[+t.closest('.draft').dataset.i]; if (!d) return;
+    if (t.dataset.d === 'amount') d.amount = parseAmount(t.value);
+    else if (t.dataset.d === 'catId') { d.catId = t.value; d.kind = (catById(t.value) || {}).kind || d.kind; d.guessed = false; renderDrafts(); return; }
+    else d[t.dataset.d] = t.value;
+    refreshVoiceSave();
+  }
+});
 
 document.addEventListener('change', e => {
   const t = e.target;
