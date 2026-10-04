@@ -1,0 +1,14 @@
+{
+  "name": "Cuentas Claras",
+  "short_name": "Cuentas",
+  "description": "Controla tus gastos, ingresos e inversiones mes a mes.",
+  "lang": "es",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#F4F6F3",
+  "theme_color": "#1F6B4F",
+  "icons": [
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
