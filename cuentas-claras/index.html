@@ -968,6 +968,9 @@ const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const SPEECH_LANG = { EUR: 'es-ES', MXN: 'es-MX', COP: 'es-CO', ARS: 'es-AR', CLP: 'es-CL', PEN: 'es-PE', USD: 'es-US', GBP: 'es-ES' };
 const VOICE_EXAMPLES = ['supermercado 150', 'gasolina 40 ayer', 'cobré 300 de freelance', 'cena 35 con 50 y netflix 13,99'];
 let rec = null, recOn = false, drafts = [];
+const APP_URL = 'https://diegof8.github.io/Diegof8/cuentas-claras/';
+const EMBEDDED = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
+const OPEN_APP = `<a href="${APP_URL}" target="_blank" rel="noopener">abre Cuentas Claras en su web</a>`;
 
 function speechLang() { const n = navigator.language || ''; return /^es\b/i.test(n) ? n : (SPEECH_LANG[state.currency] || 'es-ES'); }
 function voiceSheet() {
@@ -975,7 +978,7 @@ function voiceSheet() {
   openSheet(sheetHead('Dictar movimiento') + `<div class="voice">
     <div class="voice-top">
       ${SR ? `<button class="mic-big" type="button" id="micBtn" data-act="mic" aria-pressed="false" aria-label="Empezar a escuchar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>` : ''}
-      <p class="voice-status" id="voiceStatus">${SR ? 'Toca el micrófono y di, por ejemplo, <b>«supermercado 150»</b>. Puedes decir varios seguidos.' : 'Escribe la frase o usa el micrófono del teclado de tu móvil. Por ejemplo, <b>«supermercado 150»</b>.'}</p>
+      <p class="voice-status" id="voiceStatus">${SR && EMBEDDED ? `En esta vista previa el micrófono puede estar bloqueado. Si pasa, ${OPEN_APP}.` : SR ? 'Toca el micrófono y di, por ejemplo, <b>«supermercado 150»</b>. Puedes decir varios seguidos.' : 'Este navegador no tiene dictado (pasa en Firefox). Abre la app en Chrome o Safari, o usa el micrófono del teclado de tu móvil. Por ejemplo, <b>«supermercado 150»</b>.'}</p>
     </div>
     <label class="field"><span>Lo que has dicho</span><input class="input" id="voiceText" autocomplete="off" placeholder="supermercado 150, gasolina 40 ayer" ${SR ? '' : 'autofocus'}></label>
     <div class="chips" aria-label="Ejemplos">${VOICE_EXAMPLES.map(x => `<button type="button" class="chip" data-act="voice-example" data-text="${esc(x)}">${esc(x)}</button>`).join('')}</div>
@@ -999,8 +1002,12 @@ function startRec() {
   };
   rec.onerror = e => {
     const msg = {
-      'not-allowed': 'No hay permiso para usar el micrófono. Actívalo en el navegador, o escribe la frase (el micrófono del teclado también sirve).',
-      'service-not-allowed': 'Este navegador no permite dictar aquí. Escribe la frase o usa el micrófono del teclado.',
+      'not-allowed': EMBEDDED
+        ? `Esta vista previa no permite usar el micrófono. Para hablar, ${OPEN_APP}.`
+        : 'El micrófono está bloqueado. Toca el candado junto a la dirección web, permite el micrófono y vuelve a tocar el botón.',
+      'service-not-allowed': EMBEDDED
+        ? `Esta vista previa no permite usar el micrófono. Para hablar, ${OPEN_APP}.`
+        : 'Este navegador no deja dictar aquí. En iPhone, activa Siri y Dictado en Ajustes y abre la app en Safari.',
       'no-speech': 'No te he oído. Toca el micrófono y vuelve a intentarlo.',
       'audio-capture': 'No se encuentra ningún micrófono. Escribe la frase en el recuadro.',
       'network': 'El dictado necesita conexión a internet. Escribe la frase en el recuadro.'

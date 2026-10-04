@@ -1,5 +1,6 @@
-// Caché offline sencilla: la app funciona sin conexión tras la primera visita.
-const CACHE = 'cuentas-claras-v1';
+// Uso sin conexión: la página se pide primero a la red (así siempre llega la última versión)
+// y, si no hay conexión, se sirve la copia guardada.
+const CACHE = 'cuentas-claras-v2';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 self.addEventListener('install', (e) => {
@@ -15,14 +16,12 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  if (e.request.method !== 'GET') return;
+  const req = e.request;
+  if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   e.respondWith(
-    caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-      if (res.ok && new URL(e.request.url).origin === location.origin) {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(e.request, copy));
-      }
+    fetch(req).then((res) => {
+      if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(req, copy)); }
       return res;
-    }).catch(() => caches.match('./index.html')))
+    }).catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
   );
 });
